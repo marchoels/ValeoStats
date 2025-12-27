@@ -1255,31 +1255,38 @@ def main() -> None:
     # Register error handler
     application.add_error_handler(error_handler)
     
-    # Schedule daily job (runs at 1:00 AM Berlin time every day)
+    # Get job queue
     job_queue = application.job_queue
-    from datetime import time
-    job_queue.run_daily(
-        daily_report_job,
-        time=time(hour=1, minute=0, tzinfo=BERLIN_TZ),
-        name="daily-revenue-report"
-    )
     
-    # Schedule weekly job (runs at 1:00 AM Berlin time every Monday)
-    from datetime import time as dtime
-    job_queue.run_daily(
-        weekly_report_job,
-        time=dtime(hour=1, minute=0, tzinfo=BERLIN_TZ),
-        days=(0,),  # 0 = Monday
-        name="weekly-revenue-report"
-    )
-    
-    # Schedule whale alert job (runs every 5 minutes)
-    job_queue.run_repeating(
-        whale_alert_job,
-        interval=300,  # 5 minutes in seconds
-        first=10,  # Start 10 seconds after bot starts
-        name="whale-alerts"
-    )
+    # Only schedule jobs if job_queue is available
+    if job_queue:
+        # Schedule daily job (runs at 1:00 AM Berlin time every day)
+        from datetime import time
+        job_queue.run_daily(
+            daily_report_job,
+            time=time(hour=1, minute=0, tzinfo=BERLIN_TZ),
+            name="daily-revenue-report"
+        )
+        
+        # Schedule weekly job (runs at 1:00 AM Berlin time every Monday)
+        from datetime import time as dtime
+        job_queue.run_daily(
+            weekly_report_job,
+            time=dtime(hour=1, minute=0, tzinfo=BERLIN_TZ),
+            days=(0,),  # 0 = Monday
+            name="weekly-revenue-report"
+        )
+        
+        # Schedule whale alert job (runs every 5 minutes)
+        job_queue.run_repeating(
+            whale_alert_job,
+            interval=300,  # 5 minutes in seconds
+            first=10,  # Start 10 seconds after bot starts
+            name="whale-alerts"
+        )
+        logger.info("Scheduled jobs registered successfully")
+    else:
+        logger.warning("JobQueue not available - scheduled reports will not work")
     
     logger.info("ValeoBot is running! Press Ctrl+C to stop.")
     
