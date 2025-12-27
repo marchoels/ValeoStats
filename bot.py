@@ -225,6 +225,18 @@ try:
             
             def save(self, mappings: Dict[str, ChatMapping]) -> None:
                 """Save all mappings to database."""
+                # First, get all existing chat_ids from database
+                existing_mappings = _db_storage.load_all_mappings()
+                existing_chat_ids = set(existing_mappings.keys())
+                new_chat_ids = set(mappings.keys())
+                
+                # Delete chat_ids that are no longer in the mappings dict
+                deleted_chat_ids = existing_chat_ids - new_chat_ids
+                for chat_id in deleted_chat_ids:
+                    _db_storage.delete_mapping(chat_id)
+                    logger.info(f"Deleted mapping for chat {chat_id} from database")
+                
+                # Save or update remaining mappings
                 for chat_id, mapping in mappings.items():
                     # Convert ChatMapping to dict
                     mapping_dict = {
@@ -244,6 +256,7 @@ try:
                         ]
                     }
                     _db_storage.save_mapping(chat_id, mapping_dict)
+
         
         storage = DatabaseStorageWrapper()
         logger.info("Database storage initialized successfully")
