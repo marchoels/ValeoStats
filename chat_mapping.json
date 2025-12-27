@@ -1,0 +1,63 @@
+{
+  "-1003297838339": {
+    "models": [
+      {
+        "platform": "onlyfans",
+        "platform_account_id": "454315739",
+        "nickname": null
+      }
+    ],
+    "chat_type": "chatter",
+    "enable_daily_report": false,
+    "enable_weekly_report": false,
+    "enable_whale_alerts": true,
+    "whale_alert_threshold": 4
+  },
+  "-1003219598638": {
+    "models": [
+      {
+        "platform": "onlyfans",
+        "platform_account_id": "453254239",
+        "nickname": null
+      }
+    ],
+    "chat_type": "chatter",
+    "enable_daily_report": false,
+    "enable_weekly_report": false,
+    "enable_whale_alerts": true,
+    "whale_alert_threshold": 4
+  },
+  "-1003293913691": {
+    "models": [
+      {
+        "platform": "onlyfans",
+        "platform_account_id": "316579006",
+        "nickname": null
+      }
+    ],
+    "chat_type": "chatter",
+    "enable_daily_report": false,
+    "enable_weekly_report": false,
+    "enable_whale_alerts": true,
+    "whale_alert_threshold": 4
+  },
+  "-1002948480737": {
+    "models": [
+      {
+        "platform": "onlyfans",
+        "platform_account_id": "454315739",
+        "nickname": "Maxes🎀"
+      },
+      {
+        "platform": "onlyfans",
+        "platform_account_id": "453254239",
+        "nickname": "Candi🍬"
+      }
+    ],
+    "chat_type": "agency",
+    "enable_daily_report": true,
+    "enable_weekly_report": true,
+    "enable_whale_alerts": true,
+    "whale_alert_threshold": 4
+  }
+}

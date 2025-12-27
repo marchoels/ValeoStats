@@ -1,0 +1,131 @@
+# 🎯 ValeoBot - Feature Summary
+
+## ✅ Daily Report Feature
+
+**YES! The bot automatically sends daily reports at 1:00 AM Berlin time!**
+
+### What the Daily Report Includes:
+
+📊 **Revenue Statistics**
+- Total revenue for the previous 24 hours (OnlyFans day: 1 AM - 1 AM Berlin time)
+- Number of transactions
+- Currency
+
+👥 **Subscriber Statistics** (if available from API)
+- New subscribers gained in the last 24 hours
+- Total current subscribers
+
+🎯 **Model Information**
+- Platform (OnlyFans, Fansly, etc.)
+- Account ID
+- Date range
+
+### Example Daily Report Message:
+
+```
+📊 Daily Revenue Report
+
+🎯 Model: 454315739
+🌐 Platform: Onlyfans
+
+💰 Total Revenue: 1,234.56 USD
+📈 Transactions: 45
+👥 New Subscribers: 12
+📊 Total Subscribers: 567
+
+📅 Period: 26.12.2025 01:00 - 27.12.2025 00:59 (Berlin)
+```
+
+---
+
+## 📋 How It Works
+
+1. **Scheduled Job**: Runs automatically at 1:00 AM Berlin time every day
+2. **Data Collection**: Fetches yesterday's data from OnlyMonster API
+3. **Multi-Chat**: Sends reports to ALL linked Telegram chats
+4. **No Manual Action Needed**: Completely automatic once set up
+
+---
+
+## 🎨 File Naming
+
+Your downloaded files should be renamed to:
+
+| Current Name | Rename To |
+|-------------|-----------|
+| OnlyMonster API Telegram Bot | `bot.py` |
+| OnlyMonster API Telegra...ping.json | `chat_mapping.json` |
+| OnlyMonster API Telegra...DME.md | `README.md` |
+| OnlyMonster API Telegra...ments.txt | `requirements.txt` |
+| Telegram Bot OnlyMo...er API.py | `.env` |
+
+See **FILENAMES.txt** for complete guide!
+
+---
+
+## 🆕 Updates Made
+
+### Enhanced Daily Reports
+✅ Added subscriber tracking (new + total)
+✅ Better formatted messages with emojis
+✅ Timezone-aware (Berlin time)
+✅ Error handling for API failures
+
+### Subscriber Data
+The bot now tries to fetch:
+- **New subscribers** in the time period
+- **Total current subscribers**
+
+**Note**: Subscriber data depends on OnlyMonster API endpoints. If the API doesn't provide subscriber endpoints, the bot will still work perfectly - it just won't show subscriber counts.
+
+---
+
+## 🚀 Commands Available
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Welcome message |
+| `/link onlyfans 454315739` | Link chat to model |
+| `/today` | Show today's revenue + subscribers |
+| `/yesterday` | Show yesterday's stats |
+| `/unlink` | Remove model link |
+
+---
+
+## ⚙️ Technical Details
+
+### OnlyFans Day Calculation
+- Runs from **1:00 AM to 12:59:59 AM** (Berlin time)
+- Automatically converts to UTC for API calls
+- Handles daylight saving time correctly
+
+### API Endpoints Used
+1. `/api/v0/platforms/{platform}/accounts/{id}/transactions` - Revenue data
+2. `/api/v0/platforms/{platform}/accounts/{id}/subscribers` - Subscriber data (if available)
+
+### Fallback Behavior
+If subscriber endpoint doesn't exist:
+- Bot continues to work normally
+- Shows revenue and transactions only
+- Logs a warning but doesn't crash
+
+---
+
+## 🔒 Security
+
+⚠️ **Keep `.env` file secret!**
+- Contains your API tokens
+- Never commit to public GitHub
+- Don't share screenshots with tokens visible
+
+---
+
+## 📞 Support
+
+If daily reports aren't working:
+1. Check bot is running continuously
+2. Verify server time is correct
+3. Check logs for errors: `tail -f bot.log`
+4. Ensure chat_mapping.json exists
+
+For API questions: https://docs.onlymonster.ai/
