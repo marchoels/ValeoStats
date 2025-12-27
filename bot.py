@@ -723,21 +723,96 @@ async def cmd_unlink(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     
     if chat_id not in mappings:
         await update.message.reply_text(
-            "❌ This chat is not linked to any model.",
+            "❌ This chat is not linked to any models.",
             parse_mode="Markdown"
         )
         return
     
     mapping = mappings[chat_id]
-    del mappings[chat_id]
-    storage.save(mappings)
     
-    logger.info(f"Unlinked chat {chat_id} from {mapping.platform} account {mapping.platform_account_id}")
+    # If no model specified, show usage
+    if len(context.args) == 0:
+        model_list = "\n".join([
+            f"• `{m.nickname or m.platform_account_id}` ({m.platform_account_id})"
+            for m in mapping.models
+        ])
+        await update.message.reply_text(
+            f"**Linked Models:**\n{model_list}\n\n"
+            f"**Usage:** `/unlink <model_name_or_id>`\n"
+            f"**Example:** `/unlink {mapping.models[0].nickname or mapping.models[0].platform_account_id}`\n\n"
+            f"Or use `/unlink all` to remove all models",
+            parse_mode="Markdown"
+        )
+        return
     
-    msg = MessageFormatter.format_success(
-        f"Unlinked from model `{mapping.platform_account_id}` on `{mapping.platform.title()}`"
-    )
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    model_identifier = " ".join(context.args).lower()
+    
+    # Special case: unlink all
+    if model_identifier == "all":
+        model_count = len(mapping.models)
+        del mappings[chat_id]
+        storage.save(mappings)
+        logger.info(f"Unlinked all models from chat {chat_id}")
+        await update.message.reply_text(
+            f"✅ Removed all {model_count} model(s) from this group.\n\n"
+            f"Use `/link` to add models again.",
+            parse_mode="Markdown"
+        )
+        return
+    
+    # Find and remove specific model
+    model_to_remove = None
+    for model in mapping.models:
+        if (model.platform_account_id.lower() == model_identifier or 
+            (model.nickname and model.nickname.lower() == model_identifier)):
+            model_to_remove = model
+            break
+    
+    if not model_to_remove:
+        model_list = ", ".join([
+            f"`{m.nickname or m.platform_account_id}`" for m in mapping.models
+        ])
+        await update.message.reply_text(
+            f"❌ Model `{model_identifier}` not found.\n\n"
+            f"**Linked models:** {model_list}\n\n"
+            f"Use `/models` to see all linked models",
+            parse_mode="Markdown"
+        )
+        return
+    
+    # Remove the model
+    mapping.models.remove(model_to_remove)
+    
+    # If no models left, delete the entire mapping
+    if not mapping.models:
+        del mappings[chat_id]
+        storage.save(mappings)
+        logger.info(f"Removed last model from chat {chat_id}, deleted mapping")
+        await update.message.reply_text(
+            f"✅ Removed **{model_to_remove.nickname or model_to_remove.platform_account_id}**\n\n"
+            f"No models left in this group.\n"
+            f"Use `/link` to add models.",
+            parse_mode="Markdown"
+        )
+    else:
+        # Update mapping with remaining models
+        mappings[chat_id] = mapping
+        storage.save(mappings)
+        logger.info(
+            f"Removed model {model_to_remove.platform_account_id} from chat {chat_id}, "
+            f"{len(mapping.models)} model(s) remaining"
+        )
+        
+        remaining_models = ", ".join([
+            f"`{m.nickname or m.platform_account_id}`" for m in mapping.models
+        ])
+        
+        await update.message.reply_text(
+            f"✅ Removed **{model_to_remove.nickname or model_to_remove.platform_account_id}**\n\n"
+            f"**Remaining models ({len(mapping.models)}):** {remaining_models}",
+            parse_mode="Markdown"
+        )
+
 
 
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
