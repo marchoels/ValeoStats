@@ -8,7 +8,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
 from dataclasses import dataclass
 
 import requests
@@ -20,6 +20,9 @@ from telegram.ext import (
     ContextTypes,
     CallbackContext,
 )
+
+# Import chatter tracker module
+from chatter_tracker import ChatterPerformanceClient, format_chatter_report
 
 # ============================================================================
 # Configuration & Setup
@@ -72,6 +75,7 @@ class ChatMapping:
     enable_daily_report: bool = True
     enable_weekly_report: bool = True
     enable_whale_alerts: bool = True
+    enable_chatter_report: bool = False  # New: Enable daily chatter performance report
     whale_alert_threshold: int = 4  # Buying power score threshold (0-5)
 
 
@@ -133,7 +137,12 @@ class StorageManager:
                         mapping_data["enable_daily_report"] = True
                         mapping_data["enable_weekly_report"] = True
                         mapping_data["enable_whale_alerts"] = True
+                        mapping_data["enable_chatter_report"] = False
                         mapping_data["whale_alert_threshold"] = 4
+                    
+                    # Add chatter_report field if missing (backwards compatibility)
+                    if "enable_chatter_report" not in mapping_data:
+                        mapping_data["enable_chatter_report"] = False
                     
                     mappings[chat_id] = ChatMapping(
                         models=models,
@@ -141,6 +150,7 @@ class StorageManager:
                         enable_daily_report=mapping_data.get("enable_daily_report", True),
                         enable_weekly_report=mapping_data.get("enable_weekly_report", True),
                         enable_whale_alerts=mapping_data.get("enable_whale_alerts", True),
+                        enable_chatter_report=mapping_data.get("enable_chatter_report", False),
                         whale_alert_threshold=mapping_data.get("whale_alert_threshold", 4),
                     )
                 return mappings
@@ -165,6 +175,7 @@ class StorageManager:
                     "enable_daily_report": mapping.enable_daily_report,
                     "enable_weekly_report": mapping.enable_weekly_report,
                     "enable_whale_alerts": mapping.enable_whale_alerts,
+                    "enable_chatter_report": mapping.enable_chatter_report,
                     "whale_alert_threshold": mapping.whale_alert_threshold,
                 }
                 for chat_id, mapping in mappings.items()
@@ -616,6 +627,7 @@ async def cmd_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             enable_daily_report=enable_daily,
             enable_weekly_report=enable_weekly,
             enable_whale_alerts=enable_whale,
+            enable_chatter_report=False,  # Default off, enable with /config
             whale_alert_threshold=4,  # Default threshold: 4+
         )
         storage.save(mappings)
@@ -910,11 +922,13 @@ async def cmd_config(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             f"• Daily reports (1 AM): {'✅' if mapping.enable_daily_report else '❌'}\n"
             f"• Weekly reports (Mon 1 AM): {'✅' if mapping.enable_weekly_report else '❌'}\n"
             f"• Whale alerts: {'✅' if mapping.enable_whale_alerts else '❌'}\n"
+            f"• Chatter report (1 AM): {'✅' if mapping.enable_chatter_report else '❌'}\n"
             f"• Whale threshold: Score ≥ {mapping.whale_alert_threshold}\n\n"
             "**Modify Settings:**\n"
             "`/config daily on|off` - Toggle daily reports\n"
             "`/config weekly on|off` - Toggle weekly reports\n"
             "`/config whale on|off` - Toggle whale alerts\n"
+            "`/config chatter_report on|off` - Toggle chatter performance report\n"
             "`/config threshold <0-5>` - Set whale alert threshold\n\n"
             "**Manage Models:**\n"
             "`/models` - List all linked models\n"
@@ -955,6 +969,28 @@ async def cmd_config(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             f"✅ Whale alerts: {'Enabled' if value else 'Disabled'}",
             parse_mode="Markdown"
         )
+    
+    elif setting == "chatter_report" and len(context.args) >= 2:
+        value = context.args[1].lower() == "on"
+        mapping.enable_chatter_report = value
+        mappings[chat_id] = mapping
+        storage.save(mappings)
+        
+        if value:
+            model_count = len(mapping.models)
+            model_names = ", ".join([m.nickname or m.platform_account_id for m in mapping.models])
+            await update.message.reply_text(
+                f"✅ **Chatter Performance Report: Enabled**\n\n"
+                f"Daily chatter reports will be sent at 1:00 AM Berlin time.\n\n"
+                f"📊 Tracking chatters across {model_count} model(s):\n{model_names}\n\n"
+                f"💡 Tip: Add more models with `/link onlyfans <id> chatter <name>`",
+                parse_mode="Markdown"
+            )
+        else:
+            await update.message.reply_text(
+                f"✅ Chatter Performance Report: Disabled",
+                parse_mode="Markdown"
+            )
     
     elif setting == "threshold" and len(context.args) >= 2:
         try:
@@ -1145,6 +1181,122 @@ async def weekly_report_job(context: CallbackContext) -> None:
             logger.error(f"Failed to send weekly report to chat {chat_id}: {e}")
 
 
+async def chatter_report_job(context: CallbackContext) -> None:
+    """
+    Scheduled job that runs daily at 1:00 AM Berlin time.
+    Sends yesterday's chatter performance report to groups with chatter_report enabled.
+    Combines data from ALL linked models in the group.
+    """
+    logger.info("Starting chatter report job")
+    
+    mappings = storage.load()
+    
+    if not mappings:
+        logger.info("No chat mappings found for chatter report")
+        return
+    
+    # Initialize chatter performance client
+    chatter_client = ChatterPerformanceClient()
+    
+    # Get yesterday's date for the report title
+    yesterday = (datetime.now(BERLIN_TZ) - timedelta(days=1)).strftime("%Y-%m-%d")
+    
+    for chat_id, mapping in mappings.items():
+        # Only send if chatter reports are enabled
+        if not mapping.enable_chatter_report:
+            logger.info(f"Chatter reports disabled for chat {chat_id}, skipping")
+            continue
+        
+        if not mapping.models:
+            logger.warning(f"No models linked to chat {chat_id}, skipping chatter report")
+            continue
+        
+        try:
+            # Fetch chatter performance from ALL linked models
+            all_chatter_stats = []
+            model_names = []
+            
+            for model in mapping.models:
+                try:
+                    chatter_stats = chatter_client.get_yesterday_performance(
+                        model.platform,
+                        model.platform_account_id
+                    )
+                    
+                    # Add all chatters from this model
+                    all_chatter_stats.extend(chatter_stats)
+                    model_names.append(model.nickname or model.platform_account_id)
+                    
+                    logger.info(
+                        f"Fetched {len(chatter_stats)} chatters from {model.platform_account_id}"
+                    )
+                    
+                except Exception as e:
+                    logger.error(
+                        f"Failed to fetch chatter stats for {model.platform_account_id}: {e}"
+                    )
+                    continue
+            
+            if not all_chatter_stats:
+                logger.warning(f"No chatter stats found for chat {chat_id}")
+                continue
+            
+            # Combine chatters with same name (across multiple models)
+            from collections import defaultdict
+            combined_chatters = defaultdict(lambda: {
+                'total_sales': 0,
+                'total_messages': 0,
+                'template_messages': 0,
+                'manual_messages': 0,
+                'response_times': [],
+                'conversions': []
+            })
+            
+            for stats in all_chatter_stats:
+                chatter = combined_chatters[stats.chatter_name]
+                chatter['total_sales'] += stats.total_sales
+                chatter['total_messages'] += stats.total_messages
+                chatter['template_messages'] += stats.template_messages
+                chatter['manual_messages'] += stats.manual_messages
+                chatter['response_times'].append(stats.avg_response_time_seconds)
+                chatter['conversions'].append(stats.ppv_conversion_rate)
+            
+            # Convert back to ChatterStats objects
+            from chatter_tracker import ChatterStats
+            final_stats = []
+            for name, data in combined_chatters.items():
+                avg_response = sum(data['response_times']) / len(data['response_times'])
+                avg_conversion = sum(data['conversions']) / len(data['conversions'])
+                
+                final_stats.append(ChatterStats(
+                    chatter_name=name,
+                    total_sales=data['total_sales'],
+                    avg_response_time_seconds=avg_response,
+                    ppv_conversion_rate=avg_conversion,
+                    total_messages=data['total_messages'],
+                    template_messages=data['template_messages'],
+                    manual_messages=data['manual_messages']
+                ))
+            
+            # Sort by sales (highest first)
+            final_stats.sort(key=lambda x: x.total_sales, reverse=True)
+            
+            # Format report with all models listed
+            models_list = ", ".join(model_names)
+            report = format_chatter_report(final_stats, f"All Models ({models_list})", yesterday)
+            
+            # Send report
+            await context.bot.send_message(
+                chat_id=int(chat_id),
+                text=report,
+                parse_mode="Markdown"
+            )
+            logger.info(f"Sent combined chatter report to chat {chat_id} ({len(final_stats)} chatters)")
+            
+        except Exception as e:
+            logger.error(f"Failed to send chatter report to chat {chat_id}: {e}")
+
+
 async def whale_alert_job(context: CallbackContext) -> None:
     """
     Check for high-value fans online and send whale alerts.
@@ -1284,6 +1436,14 @@ def main() -> None:
             first=10,  # Start 10 seconds after bot starts
             name="whale-alerts"
         )
+        
+        # Schedule chatter report job (runs at 1:00 AM Berlin time every day)
+        job_queue.run_daily(
+            chatter_report_job,
+            time=time(hour=1, minute=0, tzinfo=BERLIN_TZ),
+            name="chatter-performance-report"
+        )
+        
         logger.info("Scheduled jobs registered successfully")
     else:
         logger.warning("JobQueue not available - scheduled reports will not work")
