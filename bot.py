@@ -416,8 +416,12 @@ class OnlyMonsterClient:
             except Exception as e:
                 logger.warning(f"Could not fetch subscriber data: {e}")
             
+            # Calculate NET revenue (after OnlyFans 20% fee)
+            # OnlyFans takes 20%, creator gets 80%
+            net_amount = total_amount * 0.80
+            
             return RevenueStats(
-                total_amount=total_amount,
+                total_amount=net_amount,  # Show NET revenue instead of gross
                 currency=currency,
                 transaction_count=len(items),
                 start_time=start,
