@@ -24,6 +24,9 @@ from telegram.ext import (
 # Import chatter tracker module
 from chatter_tracker import ChatterPerformanceClient, format_chatter_report
 
+# Import database storage
+from db_storage import DatabaseStorage
+
 # ============================================================================
 # Configuration & Setup
 # ============================================================================
@@ -186,7 +189,70 @@ class StorageManager:
             logger.error(f"Failed to save mappings: {e}")
 
 
-storage = StorageManager(MAPPING_FILE)
+# Initialize storage (use database if DATABASE_URL is available, otherwise use JSON)
+try:
+    if os.getenv("DATABASE_URL"):
+        logger.info("Using PostgreSQL database for storage")
+        _db_storage = DatabaseStorage()
+        
+        # Wrapper to make DatabaseStorage compatible with existing code
+        class DatabaseStorageWrapper:
+            def load(self) -> Dict[str, ChatMapping]:
+                """Load all mappings from database."""
+                mappings_dict = _db_storage.load_all_mappings()
+                mappings = {}
+                for chat_id, mapping_data in mappings_dict.items():
+                    # Convert models from dict to ModelConfig objects
+                    models = [
+                        ModelConfig(
+                            platform=m['platform'],
+                            platform_account_id=m['platform_account_id'],
+                            nickname=m.get('nickname')
+                        )
+                        for m in mapping_data.get('models', [])
+                    ]
+                    
+                    mappings[chat_id] = ChatMapping(
+                        models=models,
+                        chat_type=mapping_data.get('chat_type', 'agency'),
+                        enable_daily_report=mapping_data.get('enable_daily_report', True),
+                        enable_weekly_report=mapping_data.get('enable_weekly_report', True),
+                        enable_whale_alerts=mapping_data.get('enable_whale_alerts', True),
+                        enable_chatter_report=mapping_data.get('enable_chatter_report', False),
+                        whale_alert_threshold=mapping_data.get('whale_alert_threshold', 4),
+                    )
+                return mappings
+            
+            def save(self, mappings: Dict[str, ChatMapping]) -> None:
+                """Save all mappings to database."""
+                for chat_id, mapping in mappings.items():
+                    # Convert ChatMapping to dict
+                    mapping_dict = {
+                        'chat_type': mapping.chat_type,
+                        'enable_daily_report': mapping.enable_daily_report,
+                        'enable_weekly_report': mapping.enable_weekly_report,
+                        'enable_whale_alerts': mapping.enable_whale_alerts,
+                        'enable_chatter_report': mapping.enable_chatter_report,
+                        'whale_alert_threshold': mapping.whale_alert_threshold,
+                        'models': [
+                            {
+                                'platform': m.platform,
+                                'platform_account_id': m.platform_account_id,
+                                'nickname': m.nickname
+                            }
+                            for m in mapping.models
+                        ]
+                    }
+                    _db_storage.save_mapping(chat_id, mapping_dict)
+        
+        storage = DatabaseStorageWrapper()
+        logger.info("Database storage initialized successfully")
+    else:
+        logger.info("DATABASE_URL not found, using JSON file storage")
+        storage = StorageManager(MAPPING_FILE)
+except Exception as e:
+    logger.error(f"Failed to initialize database storage, falling back to JSON: {e}")
+    storage = StorageManager(MAPPING_FILE)
 
 
 # ============================================================================
