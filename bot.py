@@ -1680,91 +1680,6 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 # ============================================================================
-# API Test Helper (Run Once on Startup)
-# ============================================================================
-
-
-def test_onlymonster_api():
-    """
-    Test the OnlyMonster API to see what transaction data includes.
-    This runs once on startup to help debug subscriber counting.
-    """
-    logger.info("=" * 60)
-    logger.info("🧪 RUNNING ONLYMONSTER API TEST")
-    logger.info("=" * 60)
-    
-    try:
-        # Test with the first available model from storage
-        mappings = storage.load()
-        if not mappings:
-            logger.warning("No chat mappings found for API test")
-            return
-        
-        # Get first model
-        first_mapping = list(mappings.values())[0]
-        if not first_mapping.models:
-            logger.warning("No models found in first mapping")
-            return
-        
-        test_model = first_mapping.models[0]
-        platform = test_model.platform
-        account_id = test_model.platform_account_id
-        
-        logger.info(f"Testing with: {platform} / {account_id}")
-        
-        # Get today's data
-        now_berlin = datetime.now(BERLIN_TZ)
-        start_local = datetime(now_berlin.year, now_berlin.month, now_berlin.day, 1, 0, 0, tzinfo=BERLIN_TZ)
-        end_local = now_berlin
-        
-        start_utc = start_local.astimezone(timezone.utc)
-        end_utc = end_local.astimezone(timezone.utc)
-        
-        # Fetch transactions
-        data = om_client.get_transactions(platform, account_id, start_utc, end_utc)
-        items = data.get("items", []) or []
-        
-        logger.info(f"📊 Total transactions: {len(items)}")
-        
-        if items:
-            # Show first transaction structure
-            logger.info("📋 First transaction sample:")
-            first_item = items[0]
-            for key, value in first_item.items():
-                logger.info(f"  {key}: {value}")
-            
-            # Analyze transaction types
-            type_counts = {}
-            for item in items:
-                item_type = item.get("type", "unknown")
-                type_counts[item_type] = type_counts.get(item_type, 0) + 1
-            
-            logger.info("📊 Transaction types breakdown:")
-            for t_type, count in sorted(type_counts.items()):
-                logger.info(f"  - {t_type}: {count} transactions")
-            
-            # Look for subscription-related fields
-            logger.info("🔍 Checking for subscription indicators...")
-            sample_fields = set()
-            for item in items[:10]:  # Check first 10
-                sample_fields.update(item.keys())
-            
-            logger.info(f"Available fields in transactions: {sorted(sample_fields)}")
-            
-        else:
-            logger.info("⚠️  No transactions found for today")
-        
-        logger.info("=" * 60)
-        logger.info("✅ API TEST COMPLETE - Check logs above for transaction structure")
-        logger.info("=" * 60)
-        
-    except Exception as e:
-        logger.error(f"❌ API test failed: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-
-
-# ============================================================================
 # Main Application
 # ============================================================================
 
@@ -1790,10 +1705,6 @@ def main() -> None:
     
     # Register error handler
     application.add_error_handler(error_handler)
-    
-    # Run OnlyMonster API test on startup (to debug subscriber counting)
-    logger.info("Running OnlyMonster API test to inspect transaction data...")
-    test_onlymonster_api()
     
     # Get job queue
     job_queue = application.job_queue
