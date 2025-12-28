@@ -165,10 +165,10 @@ class DatabaseStorage:
                         'chat_type': mapping['chat_type'],
                         'enable_daily_report': mapping['enable_daily_report'],
                         'enable_weekly_report': mapping['enable_weekly_report'],
-                        'enable_monthly_report': mapping.get('enable_monthly_report', True),
+                        'enable_monthly_report': mapping.get('enable_monthly_report', True),  # Safe: defaults to True if column doesn't exist
                         'enable_whale_alerts': mapping['enable_whale_alerts'],
-                        'enable_chatter_report': mapping['enable_chatter_report'],
-                        'whale_alert_threshold': mapping['whale_alert_threshold'],
+                        'enable_chatter_report': mapping.get('enable_chatter_report', False),  # Safe: defaults to False if missing
+                        'whale_alert_threshold': mapping.get('whale_alert_threshold', 4),  # Safe: defaults to 4
                         'models': [dict(model) for model in models]
                     }
         except Exception as e:
