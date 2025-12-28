@@ -987,22 +987,76 @@ async def cmd_yesterday(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     
     mapping = mappings[chat_id]
     
+    # Parse optional model filter from args
+    model_filter = " ".join(context.args) if context.args else None
+    
+    # Filter models if specified
+    models_to_show = mapping.models
+    if model_filter:
+        # Try to match by nickname or ID
+        models_to_show = [
+            m for m in mapping.models
+            if (m.nickname and model_filter.lower() in m.nickname.lower()) or
+               model_filter in m.platform_account_id
+        ]
+        
+        if not models_to_show:
+            await update.message.reply_text(
+                f"❌ No model found matching '{model_filter}'\n\n"
+                f"Available models: {', '.join(m.nickname or m.platform_account_id for m in mapping.models)}",
+                parse_mode="Markdown"
+            )
+            return
+    
     # Get yesterday's revenue
     try:
         start_utc, end_utc = OnlyFansCalendar.get_previous_of_day()
-        stats = om_client.calculate_revenue(
-            mapping.platform,
-            mapping.platform_account_id,
-            start_utc,
-            end_utc
-        )
         
-        msg = MessageFormatter.format_revenue(
-            stats,
-            mapping.platform_account_id,
-            mapping.platform,
-            "Yesterday's Revenue"
-        )
+        # Fetch stats for selected models
+        all_stats = []
+        for model in models_to_show:
+            stats = om_client.calculate_revenue(
+                model.platform,
+                model.platform_account_id,
+                start_utc,
+                end_utc
+            )
+            all_stats.append((model, stats))
+        
+        # Format message based on number of models
+        if len(all_stats) == 1:
+            # Single model - detailed view
+            model, stats = all_stats[0]
+            display_name = model.nickname or model.platform_account_id
+            msg = MessageFormatter.format_revenue(
+                stats,
+                display_name,
+                model.platform,
+                "📊 Yesterday's Revenue"
+            )
+        else:
+            # Multiple models - combined view
+            total_revenue = sum(s.total_amount for _, s in all_stats)
+            total_subs = sum(s.new_subscribers or 0 for _, s in all_stats)
+            
+            start_berlin = start_utc.astimezone(BERLIN_TZ)
+            end_berlin = end_utc.astimezone(BERLIN_TZ)
+            
+            msg = f"📊 *Yesterday's Revenue*\n\n"
+            msg += f"**All Models Combined:**\n"
+            msg += f"💰 Total Revenue: *${total_revenue:,.2f}*\n"
+            if total_subs > 0:
+                msg += f"👥 New Subscribers: *{total_subs}*\n"
+            msg += f"\n📅 Period: {start_berlin.strftime('%d.%m.%Y %H:%M')} - {end_berlin.strftime('%d.%m.%Y %H:%M')}\n\n"
+            
+            msg += "**Breakdown by Model:**\n"
+            for model, stats in all_stats:
+                display_name = model.nickname or model.platform_account_id
+                msg += f"\n🎯 **{display_name}**:\n"
+                msg += f"   💰 ${stats.total_amount:,.2f}"
+                if stats.new_subscribers and stats.new_subscribers > 0:
+                    msg += f" | 👥 {stats.new_subscribers} subs"
+                msg += "\n"
         
         await update.message.reply_text(msg, parse_mode="Markdown")
         
@@ -1038,6 +1092,25 @@ async def cmd_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     mapping = mappings[chat_id]
     
+    # Parse optional model filter from args
+    model_filter = " ".join(context.args) if context.args else None
+    
+    # Filter models if specified
+    models_to_show = mapping.models
+    if model_filter:
+        models_to_show = [
+            m for m in mapping.models
+            if (m.nickname and model_filter.lower() in m.nickname.lower()) or
+               model_filter in m.platform_account_id
+        ]
+        
+        if not models_to_show:
+            await update.message.reply_text(
+                f"❌ No model found matching '{model_filter}'",
+                parse_mode="Markdown"
+            )
+            return
+    
     # Get last 7 days revenue
     try:
         today = datetime.now(BERLIN_TZ).date()
@@ -1047,19 +1120,49 @@ async def cmd_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         start_utc, _ = OnlyFansCalendar.get_of_day_range(start_day)
         _, end_utc = OnlyFansCalendar.get_of_day_range(end_day)
         
-        stats = om_client.calculate_revenue(
-            mapping.platform,
-            mapping.platform_account_id,
-            start_utc,
-            end_utc
-        )
+        # Fetch stats for selected models
+        all_stats = []
+        for model in models_to_show:
+            stats = om_client.calculate_revenue(
+                model.platform,
+                model.platform_account_id,
+                start_utc,
+                end_utc
+            )
+            all_stats.append((model, stats))
         
-        msg = MessageFormatter.format_revenue(
-            stats,
-            mapping.platform_account_id,
-            mapping.platform,
-            "📊 Weekly Revenue (Last 7 Days)"
-        )
+        # Format message
+        if len(all_stats) == 1:
+            model, stats = all_stats[0]
+            display_name = model.nickname or model.platform_account_id
+            msg = MessageFormatter.format_revenue(
+                stats,
+                display_name,
+                model.platform,
+                "📊 Weekly Revenue (Last 7 Days)"
+            )
+        else:
+            total_revenue = sum(s.total_amount for _, s in all_stats)
+            total_subs = sum(s.new_subscribers or 0 for _, s in all_stats)
+            
+            start_berlin = start_utc.astimezone(BERLIN_TZ)
+            end_berlin = end_utc.astimezone(BERLIN_TZ)
+            
+            msg = f"📊 *Weekly Revenue (Last 7 Days)*\n\n"
+            msg += f"**All Models Combined:**\n"
+            msg += f"💰 Total Revenue: *${total_revenue:,.2f}*\n"
+            if total_subs > 0:
+                msg += f"👥 New Subscribers: *{total_subs}*\n"
+            msg += f"\n📅 Period: {start_berlin.strftime('%d.%m.%Y')} - {end_berlin.strftime('%d.%m.%Y')}\n\n"
+            
+            msg += "**Breakdown by Model:**\n"
+            for model, stats in all_stats:
+                display_name = model.nickname or model.platform_account_id
+                msg += f"\n🎯 **{display_name}**:\n"
+                msg += f"   💰 ${stats.total_amount:,.2f}"
+                if stats.new_subscribers and stats.new_subscribers > 0:
+                    msg += f" | 👥 {stats.new_subscribers} subs"
+                msg += "\n"
         
         await update.message.reply_text(msg, parse_mode="Markdown")
         
@@ -1295,19 +1398,50 @@ async def daily_report_job(context: CallbackContext) -> None:
             continue
         
         try:
-            stats = om_client.calculate_revenue(
-                mapping.platform,
-                mapping.platform_account_id,
-                start_utc,
-                end_utc
-            )
+            # Aggregate stats for all models in this mapping
+            all_stats = []
+            for model in mapping.models:
+                stats = om_client.calculate_revenue(
+                    model.platform,
+                    model.platform_account_id,
+                    start_utc,
+                    end_utc
+                )
+                all_stats.append((model, stats))
             
-            msg = MessageFormatter.format_revenue(
-                stats,
-                mapping.platform_account_id,
-                mapping.platform,
-                "📅 Daily Revenue Report"
-            )
+            # Format message for multiple models
+            if len(all_stats) == 1:
+                model, stats = all_stats[0]
+                display_name = model.nickname or model.platform_account_id
+                msg = MessageFormatter.format_revenue(
+                    stats,
+                    display_name,
+                    model.platform,
+                    "📅 Daily Revenue Report"
+                )
+            else:
+                # Multi-model combined report
+                total_revenue = sum(s.total_amount for _, s in all_stats)
+                total_subs = sum(s.new_subscribers or 0 for _, s in all_stats)
+                
+                start_berlin = start_utc.astimezone(BERLIN_TZ)
+                end_berlin = end_utc.astimezone(BERLIN_TZ)
+                
+                msg = f"📅 *Daily Revenue Report*\n\n"
+                msg += f"**All Models Combined:**\n"
+                msg += f"💰 Total Revenue: *${total_revenue:,.2f}*\n"
+                if total_subs > 0:
+                    msg += f"👥 New Subscribers: *{total_subs}*\n"
+                msg += f"\n📅 Period: {start_berlin.strftime('%d.%m.%Y %H:%M')} - {end_berlin.strftime('%d.%m.%Y %H:%M')}\n\n"
+                
+                msg += "**Breakdown by Model:**\n"
+                for model, stats in all_stats:
+                    display_name = model.nickname or model.platform_account_id
+                    msg += f"\n🎯 **{display_name}**:\n"
+                    msg += f"   💰 ${stats.total_amount:,.2f}"
+                    if stats.new_subscribers and stats.new_subscribers > 0:
+                        msg += f" | 👥 {stats.new_subscribers} subs"
+                    msg += "\n"
             
             await context.bot.send_message(
                 chat_id=int(chat_id),
@@ -1351,19 +1485,49 @@ async def weekly_report_job(context: CallbackContext) -> None:
             continue
         
         try:
-            stats = om_client.calculate_revenue(
-                mapping.platform,
-                mapping.platform_account_id,
-                start_utc,
-                end_utc
-            )
+            # Aggregate stats for all models
+            all_stats = []
+            for model in mapping.models:
+                stats = om_client.calculate_revenue(
+                    model.platform,
+                    model.platform_account_id,
+                    start_utc,
+                    end_utc
+                )
+                all_stats.append((model, stats))
             
-            msg = MessageFormatter.format_revenue(
-                stats,
-                mapping.platform_account_id,
-                mapping.platform,
-                "📊 Weekly Revenue Report (Last 7 Days)"
-            )
+            # Format message
+            if len(all_stats) == 1:
+                model, stats = all_stats[0]
+                display_name = model.nickname or model.platform_account_id
+                msg = MessageFormatter.format_revenue(
+                    stats,
+                    display_name,
+                    model.platform,
+                    "📊 Weekly Revenue Report (Last 7 Days)"
+                )
+            else:
+                total_revenue = sum(s.total_amount for _, s in all_stats)
+                total_subs = sum(s.new_subscribers or 0 for _, s in all_stats)
+                
+                start_berlin = start_utc.astimezone(BERLIN_TZ)
+                end_berlin = end_utc.astimezone(BERLIN_TZ)
+                
+                msg = f"📊 *Weekly Revenue Report (Last 7 Days)*\n\n"
+                msg += f"**All Models Combined:**\n"
+                msg += f"💰 Total Revenue: *${total_revenue:,.2f}*\n"
+                if total_subs > 0:
+                    msg += f"👥 New Subscribers: *{total_subs}*\n"
+                msg += f"\n📅 Period: {start_berlin.strftime('%d.%m.%Y')} - {end_berlin.strftime('%d.%m.%Y')}\n\n"
+                
+                msg += "**Breakdown by Model:**\n"
+                for model, stats in all_stats:
+                    display_name = model.nickname or model.platform_account_id
+                    msg += f"\n🎯 **{display_name}**:\n"
+                    msg += f"   💰 ${stats.total_amount:,.2f}"
+                    if stats.new_subscribers and stats.new_subscribers > 0:
+                        msg += f" | 👥 {stats.new_subscribers} subs"
+                    msg += "\n"
             
             await context.bot.send_message(
                 chat_id=int(chat_id),
