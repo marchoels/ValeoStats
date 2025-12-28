@@ -40,6 +40,7 @@ class DatabaseStorage:
                             chat_type VARCHAR(50) NOT NULL,
                             enable_daily_report BOOLEAN DEFAULT TRUE,
                             enable_weekly_report BOOLEAN DEFAULT TRUE,
+                            enable_monthly_report BOOLEAN DEFAULT TRUE,
                             enable_whale_alerts BOOLEAN DEFAULT TRUE,
                             enable_chatter_report BOOLEAN DEFAULT FALSE,
                             whale_alert_threshold INTEGER DEFAULT 4,
@@ -82,14 +83,15 @@ class DatabaseStorage:
                     # Upsert chat_mappings
                     cur.execute("""
                         INSERT INTO chat_mappings 
-                        (chat_id, chat_type, enable_daily_report, enable_weekly_report, 
+                        (chat_id, chat_type, enable_daily_report, enable_weekly_report, enable_monthly_report,
                          enable_whale_alerts, enable_chatter_report, whale_alert_threshold, updated_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
                         ON CONFLICT (chat_id) 
                         DO UPDATE SET
                             chat_type = EXCLUDED.chat_type,
                             enable_daily_report = EXCLUDED.enable_daily_report,
                             enable_weekly_report = EXCLUDED.enable_weekly_report,
+                            enable_monthly_report = EXCLUDED.enable_monthly_report,
                             enable_whale_alerts = EXCLUDED.enable_whale_alerts,
                             enable_chatter_report = EXCLUDED.enable_chatter_report,
                             whale_alert_threshold = EXCLUDED.whale_alert_threshold,
@@ -99,6 +101,7 @@ class DatabaseStorage:
                         mapping.get('chat_type', 'agency'),
                         mapping.get('enable_daily_report', True),
                         mapping.get('enable_weekly_report', True),
+                        mapping.get('enable_monthly_report', True),
                         mapping.get('enable_whale_alerts', True),
                         mapping.get('enable_chatter_report', False),
                         mapping.get('whale_alert_threshold', 4)
@@ -162,6 +165,7 @@ class DatabaseStorage:
                         'chat_type': mapping['chat_type'],
                         'enable_daily_report': mapping['enable_daily_report'],
                         'enable_weekly_report': mapping['enable_weekly_report'],
+                        'enable_monthly_report': mapping.get('enable_monthly_report', True),
                         'enable_whale_alerts': mapping['enable_whale_alerts'],
                         'enable_chatter_report': mapping['enable_chatter_report'],
                         'whale_alert_threshold': mapping['whale_alert_threshold'],

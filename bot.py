@@ -77,6 +77,7 @@ class ChatMapping:
     chat_type: str = "agency"  # "agency" or "chatter"
     enable_daily_report: bool = True
     enable_weekly_report: bool = True
+    enable_monthly_report: bool = True
     enable_whale_alerts: bool = True
     enable_chatter_report: bool = False  # New: Enable daily chatter performance report
     whale_alert_threshold: int = 4  # Buying power score threshold (0-5)
@@ -147,11 +148,16 @@ class StorageManager:
                     if "enable_chatter_report" not in mapping_data:
                         mapping_data["enable_chatter_report"] = False
                     
+                    # Add monthly_report field if missing (backwards compatibility)
+                    if "enable_monthly_report" not in mapping_data:
+                        mapping_data["enable_monthly_report"] = True
+                    
                     mappings[chat_id] = ChatMapping(
                         models=models,
                         chat_type=mapping_data.get("chat_type", "agency"),
                         enable_daily_report=mapping_data.get("enable_daily_report", True),
                         enable_weekly_report=mapping_data.get("enable_weekly_report", True),
+                        enable_monthly_report=mapping_data.get("enable_monthly_report", True),
                         enable_whale_alerts=mapping_data.get("enable_whale_alerts", True),
                         enable_chatter_report=mapping_data.get("enable_chatter_report", False),
                         whale_alert_threshold=mapping_data.get("whale_alert_threshold", 4),
@@ -177,6 +183,7 @@ class StorageManager:
                     "chat_type": mapping.chat_type,
                     "enable_daily_report": mapping.enable_daily_report,
                     "enable_weekly_report": mapping.enable_weekly_report,
+                    "enable_monthly_report": mapping.enable_monthly_report,
                     "enable_whale_alerts": mapping.enable_whale_alerts,
                     "enable_chatter_report": mapping.enable_chatter_report,
                     "whale_alert_threshold": mapping.whale_alert_threshold,
@@ -217,6 +224,7 @@ try:
                         chat_type=mapping_data.get('chat_type', 'agency'),
                         enable_daily_report=mapping_data.get('enable_daily_report', True),
                         enable_weekly_report=mapping_data.get('enable_weekly_report', True),
+                        enable_monthly_report=mapping_data.get('enable_monthly_report', True),
                         enable_whale_alerts=mapping_data.get('enable_whale_alerts', True),
                         enable_chatter_report=mapping_data.get('enable_chatter_report', False),
                         whale_alert_threshold=mapping_data.get('whale_alert_threshold', 4),
@@ -243,6 +251,7 @@ try:
                         'chat_type': mapping.chat_type,
                         'enable_daily_report': mapping.enable_daily_report,
                         'enable_weekly_report': mapping.enable_weekly_report,
+                        'enable_monthly_report': mapping.enable_monthly_report,
                         'enable_whale_alerts': mapping.enable_whale_alerts,
                         'enable_chatter_report': mapping.enable_chatter_report,
                         'whale_alert_threshold': mapping.whale_alert_threshold,
@@ -954,7 +963,7 @@ async def cmd_yesterday(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text(
             "❌ This chat is not linked to any model.\n\n"
             "Use `/link <platform> <account_id>` first.\n"
-            "Example: `/link onlyfans 454315739 agency`",
+            "Example: `/link onlyfans 454315739`",
             parse_mode="Markdown"
         )
         return
@@ -964,78 +973,19 @@ async def cmd_yesterday(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     # Get yesterday's revenue
     try:
         start_utc, end_utc = OnlyFansCalendar.get_previous_of_day()
+        stats = om_client.calculate_revenue(
+            mapping.platform,
+            mapping.platform_account_id,
+            start_utc,
+            end_utc
+        )
         
-        # Check if user specified a specific model
-        model_filter = None
-        if context.args:
-            model_filter = " ".join(context.args)
-        
-        # Determine which models to show
-        models_to_show = mapping.models
-        if model_filter:
-            # Filter by nickname or ID
-            models_to_show = [
-                m for m in mapping.models
-                if (m.nickname and m.nickname.lower() == model_filter.lower()) or
-                   m.platform_account_id == model_filter
-            ]
-            if not models_to_show:
-                await update.message.reply_text(
-                    f"❌ Model '{model_filter}' not found in this chat.\n\n"
-                    f"Use `/models` to see all linked models.",
-                    parse_mode="Markdown"
-                )
-                return
-        
-        # Fetch stats for all relevant models
-        all_stats = []
-        for model in models_to_show:
-            stats = om_client.calculate_revenue(
-                model.platform,
-                model.platform_account_id,
-                start_utc,
-                end_utc
-            )
-            all_stats.append((model, stats))
-        
-        # Format message based on number of models
-        if len(all_stats) == 1:
-            # Single model - detailed view
-            model, stats = all_stats[0]
-            display_name = model.nickname or model.platform_account_id
-            msg = MessageFormatter.format_revenue(
-                stats,
-                display_name,
-                model.platform,
-                "Yesterday's Revenue"
-            )
-        else:
-            # Multiple models - combined view
-            total_revenue = sum(s.total_amount for _, s in all_stats)
-            total_subs = sum(s.new_subscribers or 0 for _, s in all_stats)
-            
-            start_berlin = start_utc.astimezone(BERLIN_TZ)
-            end_berlin = end_utc.astimezone(BERLIN_TZ)
-            
-            msg = f"📊 *Yesterday's Revenue*\n\n"
-            msg += f"**All Models Combined:**\n"
-            msg += f"💰 Total Revenue: *${total_revenue:,.2f}*\n"
-            if total_subs > 0:
-                msg += f"👥 New Subscribers: *{total_subs}*\n"
-            msg += f"\n📅 Period: {start_berlin.strftime('%d.%m.%Y %H:%M')} - {end_berlin.strftime('%d.%m.%Y %H:%M')}\n\n"
-            
-            msg += "**Breakdown by Model:**\n"
-            for model, stats in all_stats:
-                display_name = model.nickname or model.platform_account_id
-                msg += f"\n🎯 **{display_name}**:\n"
-                msg += f"   💰 ${stats.total_amount:,.2f}"
-                if stats.new_subscribers and stats.new_subscribers > 0:
-                    msg += f" | 👥 {stats.new_subscribers} subs"
-                msg += "\n"
-            
-            # Show example with first model name
-            first_model_example = models_to_show[0].nickname or models_to_show[0].platform_account_id
-            msg += f"\nUse `/yesterday {first_model_example}` to see detailed stats for a specific model"
+        msg = MessageFormatter.format_revenue(
+            stats,
+            mapping.platform_account_id,
+            mapping.platform,
+            "Yesterday's Revenue"
+        )
         
         await update.message.reply_text(msg, parse_mode="Markdown")
         
@@ -1064,7 +1014,7 @@ async def cmd_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(
             "❌ This chat is not linked to any model.\n\n"
             "Use `/link <platform> <account_id>` first.\n"
-            "Example: `/link onlyfans 454315739 agency`",
+            "Example: `/link onlyfans 454315739`",
             parse_mode="Markdown"
         )
         return
@@ -1080,77 +1030,19 @@ async def cmd_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         start_utc, _ = OnlyFansCalendar.get_of_day_range(start_day)
         _, end_utc = OnlyFansCalendar.get_of_day_range(end_day)
         
-        # Check if user specified a specific model
-        model_filter = None
-        if context.args:
-            model_filter = " ".join(context.args)
+        stats = om_client.calculate_revenue(
+            mapping.platform,
+            mapping.platform_account_id,
+            start_utc,
+            end_utc
+        )
         
-        # Determine which models to show
-        models_to_show = mapping.models
-        if model_filter:
-            # Filter by nickname or ID
-            models_to_show = [
-                m for m in mapping.models
-                if (m.nickname and m.nickname.lower() == model_filter.lower()) or
-                   m.platform_account_id == model_filter
-            ]
-            if not models_to_show:
-                await update.message.reply_text(
-                    f"❌ Model '{model_filter}' not found in this chat.\n\n"
-                    f"Use `/models` to see all linked models.",
-                    parse_mode="Markdown"
-                )
-                return
-        
-        # Fetch stats for all relevant models
-        all_stats = []
-        for model in models_to_show:
-            stats = om_client.calculate_revenue(
-                model.platform,
-                model.platform_account_id,
-                start_utc,
-                end_utc
-            )
-            all_stats.append((model, stats))
-        
-        # Format message based on number of models
-        if len(all_stats) == 1:
-            # Single model - detailed view
-            model, stats = all_stats[0]
-            display_name = model.nickname or model.platform_account_id
-            msg = MessageFormatter.format_revenue(
-                stats,
-                display_name,
-                model.platform,
-                "📊 Weekly Revenue (Last 7 Days)"
-            )
-        else:
-            # Multiple models - combined view
-            total_revenue = sum(s.total_amount for _, s in all_stats)
-            total_subs = sum(s.new_subscribers or 0 for _, s in all_stats)
-            
-            start_berlin = start_utc.astimezone(BERLIN_TZ)
-            end_berlin = end_utc.astimezone(BERLIN_TZ)
-            
-            msg = f"📊 *Weekly Revenue (Last 7 Days)*\n\n"
-            msg += f"**All Models Combined:**\n"
-            msg += f"💰 Total Revenue: *${total_revenue:,.2f}*\n"
-            if total_subs > 0:
-                msg += f"👥 New Subscribers: *{total_subs}*\n"
-            msg += f"\n📅 Period: {start_berlin.strftime('%d.%m.%Y %H:%M')} - {end_berlin.strftime('%d.%m.%Y %H:%M')}\n\n"
-            
-            msg += "**Breakdown by Model:**\n"
-            for model, stats in all_stats:
-                display_name = model.nickname or model.platform_account_id
-                msg += f"\n🎯 **{display_name}**:\n"
-                msg += f"   💰 ${stats.total_amount:,.2f}"
-                if stats.new_subscribers and stats.new_subscribers > 0:
-                    msg += f" | 👥 {stats.new_subscribers} subs"
-                msg += "\n"
-            
-            # Show example with first model name
-            first_model_example = models_to_show[0].nickname or models_to_show[0].platform_account_id
-            msg += f"\nUse `/week {first_model_example}` to see detailed stats for a specific model"
+        msg = MessageFormatter.format_revenue(
+            stats,
+            mapping.platform_account_id,
+            mapping.platform,
+            "📊 Weekly Revenue (Last 7 Days)"
+        )
         
         await update.message.reply_text(msg, parse_mode="Markdown")
         
@@ -1196,12 +1088,14 @@ async def cmd_config(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             f"**Enabled Features:**\n"
             f"• Daily reports (1 AM): {'✅' if mapping.enable_daily_report else '❌'}\n"
             f"• Weekly reports (Mon 1 AM): {'✅' if mapping.enable_weekly_report else '❌'}\n"
+            f"• Monthly reports (1st, 1 AM): {'✅' if mapping.enable_monthly_report else '❌'}\n"
             f"• Whale alerts: {'✅' if mapping.enable_whale_alerts else '❌'}\n"
             f"• Chatter report (1 AM): {'✅' if mapping.enable_chatter_report else '❌'}\n"
             f"• Whale threshold: Score ≥ {mapping.whale_alert_threshold}\n\n"
             "**Modify Settings:**\n"
             "`/config daily on|off` - Toggle daily reports\n"
             "`/config weekly on|off` - Toggle weekly reports\n"
+            "`/config monthly on|off` - Toggle monthly reports\n"
             "`/config whale on|off` - Toggle whale alerts\n"
             "`/config chatter_report on|off` - Toggle chatter performance report\n"
             "`/config threshold <0-5>` - Set whale alert threshold\n\n"
@@ -1232,6 +1126,16 @@ async def cmd_config(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         storage.save(mappings)
         await update.message.reply_text(
             f"✅ Weekly reports: {'Enabled' if value else 'Disabled'}",
+            parse_mode="Markdown"
+        )
+    
+    elif setting == "monthly" and len(context.args) >= 2:
+        value = context.args[1].lower() == "on"
+        mapping.enable_monthly_report = value
+        mappings[chat_id] = mapping
+        storage.save(mappings)
+        await update.message.reply_text(
+            f"✅ Monthly reports: {'Enabled' if value else 'Disabled'}",
             parse_mode="Markdown"
         )
     
@@ -1374,51 +1278,19 @@ async def daily_report_job(context: CallbackContext) -> None:
             continue
         
         try:
-            # Fetch stats for all models in this chat
-            all_stats = []
-            for model in mapping.models:
-                stats = om_client.calculate_revenue(
-                    model.platform,
-                    model.platform_account_id,
-                    start_utc,
-                    end_utc
-                )
-                all_stats.append((model, stats))
+            stats = om_client.calculate_revenue(
+                mapping.platform,
+                mapping.platform_account_id,
+                start_utc,
+                end_utc
+            )
             
-            # Format message based on number of models
-            if len(all_stats) == 1:
-                # Single model - detailed view
-                model, stats = all_stats[0]
-                display_name = model.nickname or model.platform_account_id
-                msg = MessageFormatter.format_revenue(
-                    stats,
-                    display_name,
-                    model.platform,
-                    "📅 Daily Revenue Report"
-                )
-            else:
-                # Multiple models - combined view
-                total_revenue = sum(s.total_amount for _, s in all_stats)
-                total_subs = sum(s.new_subscribers or 0 for _, s in all_stats)
-                
-                start_berlin = start_utc.astimezone(BERLIN_TZ)
-                end_berlin = end_utc.astimezone(BERLIN_TZ)
-                
-                msg = f"📅 *Daily Revenue Report*\n\n"
-                msg += f"**All Models Combined:**\n"
-                msg += f"💰 Total Revenue: *${total_revenue:,.2f}*\n"
-                if total_subs > 0:
-                    msg += f"👥 New Subscribers: *{total_subs}*\n"
-                msg += f"\n📅 Period: {start_berlin.strftime('%d.%m.%Y %H:%M')} - {end_berlin.strftime('%d.%m.%Y %H:%M')}\n\n"
-                
-                msg += "**Breakdown by Model:**\n"
-                for model, stats in all_stats:
-                    display_name = model.nickname or model.platform_account_id
-                    msg += f"\n🎯 **{display_name}**:\n"
-                    msg += f"   💰 ${stats.total_amount:,.2f}"
-                    if stats.new_subscribers and stats.new_subscribers > 0:
-                        msg += f" | 👥 {stats.new_subscribers} subs"
-                    msg += "\n"
+            msg = MessageFormatter.format_revenue(
+                stats,
+                mapping.platform_account_id,
+                mapping.platform,
+                "📅 Daily Revenue Report"
+            )
             
             await context.bot.send_message(
                 chat_id=int(chat_id),
@@ -1462,6 +1334,77 @@ async def weekly_report_job(context: CallbackContext) -> None:
             continue
         
         try:
+            stats = om_client.calculate_revenue(
+                mapping.platform,
+                mapping.platform_account_id,
+                start_utc,
+                end_utc
+            )
+            
+            msg = MessageFormatter.format_revenue(
+                stats,
+                mapping.platform_account_id,
+                mapping.platform,
+                "📊 Weekly Revenue Report (Last 7 Days)"
+            )
+            
+            await context.bot.send_message(
+                chat_id=int(chat_id),
+                text=msg,
+                parse_mode="Markdown"
+            )
+            
+            logger.info(f"Sent weekly report to chat {chat_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to send weekly report to chat {chat_id}: {e}")
+
+
+async def monthly_report_job(context: CallbackContext) -> None:
+    """
+    Scheduled job that runs on the 1st of every month at 1:00 AM Berlin time.
+    Sends previous month's revenue report to all linked chats (if enabled).
+    """
+    logger.info("Starting monthly report job")
+    
+    mappings = storage.load()
+    
+    if not mappings:
+        logger.info("No chat mappings found for monthly report")
+        return
+    
+    # Calculate the previous month's date range
+    now_berlin = datetime.now(BERLIN_TZ)
+    
+    # First day of current month
+    first_day_current_month = now_berlin.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    
+    # Last day of previous month
+    last_day_prev_month = first_day_current_month - timedelta(days=1)
+    
+    # First day of previous month
+    first_day_prev_month = last_day_prev_month.replace(day=1)
+    
+    # Convert to OnlyFans days (1 AM to 1 AM)
+    # Start: 1 AM on first day of previous month
+    start_local = first_day_prev_month.replace(hour=1, minute=0, second=0, microsecond=0)
+    # End: 12:59:59 AM on first day of current month (end of last OF day of prev month)
+    end_local = first_day_current_month.replace(hour=0, minute=59, second=59, microsecond=999999)
+    
+    # Convert to UTC
+    start_utc = start_local.astimezone(timezone.utc)
+    end_utc = end_local.astimezone(timezone.utc)
+    
+    # Format month name for report
+    month_name = last_day_prev_month.strftime("%B %Y")  # e.g., "December 2024"
+    
+    for chat_id, mapping in mappings.items():
+        # Skip if monthly reports are disabled for this chat
+        if not mapping.enable_monthly_report:
+            logger.info(f"Monthly report disabled for chat {chat_id}, skipping")
+            continue
+        
+        try:
             # Fetch stats for all models in this chat
             all_stats = []
             for model in mapping.models:
@@ -1482,7 +1425,7 @@ async def weekly_report_job(context: CallbackContext) -> None:
                     stats,
                     display_name,
                     model.platform,
-                    "📊 Weekly Revenue Report (Last 7 Days)"
+                    f"📅 Monthly Revenue Report - {month_name}"
                 )
             else:
                 # Multiple models - combined view
@@ -1492,12 +1435,12 @@ async def weekly_report_job(context: CallbackContext) -> None:
                 start_berlin = start_utc.astimezone(BERLIN_TZ)
                 end_berlin = end_utc.astimezone(BERLIN_TZ)
                 
-                msg = f"📊 *Weekly Revenue Report (Last 7 Days)*\n\n"
+                msg = f"📅 *Monthly Revenue Report - {month_name}*\n\n"
                 msg += f"**All Models Combined:**\n"
                 msg += f"💰 Total Revenue: *${total_revenue:,.2f}*\n"
                 if total_subs > 0:
                     msg += f"👥 New Subscribers: *{total_subs}*\n"
-                msg += f"\n📅 Period: {start_berlin.strftime('%d.%m.%Y %H:%M')} - {end_berlin.strftime('%d.%m.%Y %H:%M')}\n\n"
+                msg += f"\n📅 Period: {start_berlin.strftime('%d.%m.%Y')} - {end_berlin.strftime('%d.%m.%Y')}\n\n"
                 
                 msg += "**Breakdown by Model:**\n"
                 for model, stats in all_stats:
@@ -1514,10 +1457,10 @@ async def weekly_report_job(context: CallbackContext) -> None:
                 parse_mode="Markdown"
             )
             
-            logger.info(f"Sent weekly report to chat {chat_id}")
+            logger.info(f"Sent monthly report to chat {chat_id}")
             
         except Exception as e:
-            logger.error(f"Failed to send weekly report to chat {chat_id}: {e}")
+            logger.error(f"Failed to send monthly report to chat {chat_id}: {e}")
 
 
 async def chatter_report_job(context: CallbackContext) -> None:
@@ -1766,6 +1709,14 @@ def main() -> None:
             time=dtime(hour=1, minute=0, tzinfo=BERLIN_TZ),
             days=(0,),  # 0 = Monday
             name="weekly-revenue-report"
+        )
+        
+        # Schedule monthly job (runs at 1:00 AM Berlin time on the 1st of every month)
+        job_queue.run_monthly(
+            monthly_report_job,
+            when=time(hour=1, minute=0, tzinfo=BERLIN_TZ),
+            day=1,  # 1st day of the month
+            name="monthly-revenue-report"
         )
         
         # Schedule whale alert job (runs every 5 minutes)
