@@ -954,7 +954,7 @@ async def cmd_yesterday(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text(
             "❌ This chat is not linked to any model.\n\n"
             "Use `/link <platform> <account_id>` first.\n"
-            "Example: `/link onlyfans 454315739`",
+            "Example: `/link onlyfans 454315739 agency`",
             parse_mode="Markdown"
         )
         return
@@ -964,19 +964,78 @@ async def cmd_yesterday(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     # Get yesterday's revenue
     try:
         start_utc, end_utc = OnlyFansCalendar.get_previous_of_day()
-        stats = om_client.calculate_revenue(
-            mapping.platform,
-            mapping.platform_account_id,
-            start_utc,
-            end_utc
-        )
         
-        msg = MessageFormatter.format_revenue(
-            stats,
-            mapping.platform_account_id,
-            mapping.platform,
-            "Yesterday's Revenue"
-        )
+        # Check if user specified a specific model
+        model_filter = None
+        if context.args:
+            model_filter = " ".join(context.args)
+        
+        # Determine which models to show
+        models_to_show = mapping.models
+        if model_filter:
+            # Filter by nickname or ID
+            models_to_show = [
+                m for m in mapping.models
+                if (m.nickname and m.nickname.lower() == model_filter.lower()) or
+                   m.platform_account_id == model_filter
+            ]
+            if not models_to_show:
+                await update.message.reply_text(
+                    f"❌ Model '{model_filter}' not found in this chat.\n\n"
+                    f"Use `/models` to see all linked models.",
+                    parse_mode="Markdown"
+                )
+                return
+        
+        # Fetch stats for all relevant models
+        all_stats = []
+        for model in models_to_show:
+            stats = om_client.calculate_revenue(
+                model.platform,
+                model.platform_account_id,
+                start_utc,
+                end_utc
+            )
+            all_stats.append((model, stats))
+        
+        # Format message based on number of models
+        if len(all_stats) == 1:
+            # Single model - detailed view
+            model, stats = all_stats[0]
+            display_name = model.nickname or model.platform_account_id
+            msg = MessageFormatter.format_revenue(
+                stats,
+                display_name,
+                model.platform,
+                "Yesterday's Revenue"
+            )
+        else:
+            # Multiple models - combined view
+            total_revenue = sum(s.total_amount for _, s in all_stats)
+            total_subs = sum(s.new_subscribers or 0 for _, s in all_stats)
+            
+            start_berlin = start_utc.astimezone(BERLIN_TZ)
+            end_berlin = end_utc.astimezone(BERLIN_TZ)
+            
+            msg = f"📊 *Yesterday's Revenue*\n\n"
+            msg += f"**All Models Combined:**\n"
+            msg += f"💰 Total Revenue: *${total_revenue:,.2f}*\n"
+            if total_subs > 0:
+                msg += f"👥 New Subscribers: *{total_subs}*\n"
+            msg += f"\n📅 Period: {start_berlin.strftime('%d.%m.%Y %H:%M')} - {end_berlin.strftime('%d.%m.%Y %H:%M')}\n\n"
+            
+            msg += "**Breakdown by Model:**\n"
+            for model, stats in all_stats:
+                display_name = model.nickname or model.platform_account_id
+                msg += f"\n🎯 **{display_name}**:\n"
+                msg += f"   💰 ${stats.total_amount:,.2f}"
+                if stats.new_subscribers and stats.new_subscribers > 0:
+                    msg += f" | 👥 {stats.new_subscribers} subs"
+                msg += "\n"
+            
+            # Show example with first model name
+            first_model_example = models_to_show[0].nickname or models_to_show[0].platform_account_id
+            msg += f"\nUse `/yesterday {first_model_example}` to see detailed stats for a specific model"
         
         await update.message.reply_text(msg, parse_mode="Markdown")
         
@@ -1005,7 +1064,7 @@ async def cmd_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(
             "❌ This chat is not linked to any model.\n\n"
             "Use `/link <platform> <account_id>` first.\n"
-            "Example: `/link onlyfans 454315739`",
+            "Example: `/link onlyfans 454315739 agency`",
             parse_mode="Markdown"
         )
         return
@@ -1021,19 +1080,77 @@ async def cmd_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         start_utc, _ = OnlyFansCalendar.get_of_day_range(start_day)
         _, end_utc = OnlyFansCalendar.get_of_day_range(end_day)
         
-        stats = om_client.calculate_revenue(
-            mapping.platform,
-            mapping.platform_account_id,
-            start_utc,
-            end_utc
-        )
+        # Check if user specified a specific model
+        model_filter = None
+        if context.args:
+            model_filter = " ".join(context.args)
         
-        msg = MessageFormatter.format_revenue(
-            stats,
-            mapping.platform_account_id,
-            mapping.platform,
-            "📊 Weekly Revenue (Last 7 Days)"
-        )
+        # Determine which models to show
+        models_to_show = mapping.models
+        if model_filter:
+            # Filter by nickname or ID
+            models_to_show = [
+                m for m in mapping.models
+                if (m.nickname and m.nickname.lower() == model_filter.lower()) or
+                   m.platform_account_id == model_filter
+            ]
+            if not models_to_show:
+                await update.message.reply_text(
+                    f"❌ Model '{model_filter}' not found in this chat.\n\n"
+                    f"Use `/models` to see all linked models.",
+                    parse_mode="Markdown"
+                )
+                return
+        
+        # Fetch stats for all relevant models
+        all_stats = []
+        for model in models_to_show:
+            stats = om_client.calculate_revenue(
+                model.platform,
+                model.platform_account_id,
+                start_utc,
+                end_utc
+            )
+            all_stats.append((model, stats))
+        
+        # Format message based on number of models
+        if len(all_stats) == 1:
+            # Single model - detailed view
+            model, stats = all_stats[0]
+            display_name = model.nickname or model.platform_account_id
+            msg = MessageFormatter.format_revenue(
+                stats,
+                display_name,
+                model.platform,
+                "📊 Weekly Revenue (Last 7 Days)"
+            )
+        else:
+            # Multiple models - combined view
+            total_revenue = sum(s.total_amount for _, s in all_stats)
+            total_subs = sum(s.new_subscribers or 0 for _, s in all_stats)
+            
+            start_berlin = start_utc.astimezone(BERLIN_TZ)
+            end_berlin = end_utc.astimezone(BERLIN_TZ)
+            
+            msg = f"📊 *Weekly Revenue (Last 7 Days)*\n\n"
+            msg += f"**All Models Combined:**\n"
+            msg += f"💰 Total Revenue: *${total_revenue:,.2f}*\n"
+            if total_subs > 0:
+                msg += f"👥 New Subscribers: *{total_subs}*\n"
+            msg += f"\n📅 Period: {start_berlin.strftime('%d.%m.%Y %H:%M')} - {end_berlin.strftime('%d.%m.%Y %H:%M')}\n\n"
+            
+            msg += "**Breakdown by Model:**\n"
+            for model, stats in all_stats:
+                display_name = model.nickname or model.platform_account_id
+                msg += f"\n🎯 **{display_name}**:\n"
+                msg += f"   💰 ${stats.total_amount:,.2f}"
+                if stats.new_subscribers and stats.new_subscribers > 0:
+                    msg += f" | 👥 {stats.new_subscribers} subs"
+                msg += "\n"
+            
+            # Show example with first model name
+            first_model_example = models_to_show[0].nickname or models_to_show[0].platform_account_id
+            msg += f"\nUse `/week {first_model_example}` to see detailed stats for a specific model"
         
         await update.message.reply_text(msg, parse_mode="Markdown")
         
@@ -1257,19 +1374,51 @@ async def daily_report_job(context: CallbackContext) -> None:
             continue
         
         try:
-            stats = om_client.calculate_revenue(
-                mapping.platform,
-                mapping.platform_account_id,
-                start_utc,
-                end_utc
-            )
+            # Fetch stats for all models in this chat
+            all_stats = []
+            for model in mapping.models:
+                stats = om_client.calculate_revenue(
+                    model.platform,
+                    model.platform_account_id,
+                    start_utc,
+                    end_utc
+                )
+                all_stats.append((model, stats))
             
-            msg = MessageFormatter.format_revenue(
-                stats,
-                mapping.platform_account_id,
-                mapping.platform,
-                "📅 Daily Revenue Report"
-            )
+            # Format message based on number of models
+            if len(all_stats) == 1:
+                # Single model - detailed view
+                model, stats = all_stats[0]
+                display_name = model.nickname or model.platform_account_id
+                msg = MessageFormatter.format_revenue(
+                    stats,
+                    display_name,
+                    model.platform,
+                    "📅 Daily Revenue Report"
+                )
+            else:
+                # Multiple models - combined view
+                total_revenue = sum(s.total_amount for _, s in all_stats)
+                total_subs = sum(s.new_subscribers or 0 for _, s in all_stats)
+                
+                start_berlin = start_utc.astimezone(BERLIN_TZ)
+                end_berlin = end_utc.astimezone(BERLIN_TZ)
+                
+                msg = f"📅 *Daily Revenue Report*\n\n"
+                msg += f"**All Models Combined:**\n"
+                msg += f"💰 Total Revenue: *${total_revenue:,.2f}*\n"
+                if total_subs > 0:
+                    msg += f"👥 New Subscribers: *{total_subs}*\n"
+                msg += f"\n📅 Period: {start_berlin.strftime('%d.%m.%Y %H:%M')} - {end_berlin.strftime('%d.%m.%Y %H:%M')}\n\n"
+                
+                msg += "**Breakdown by Model:**\n"
+                for model, stats in all_stats:
+                    display_name = model.nickname or model.platform_account_id
+                    msg += f"\n🎯 **{display_name}**:\n"
+                    msg += f"   💰 ${stats.total_amount:,.2f}"
+                    if stats.new_subscribers and stats.new_subscribers > 0:
+                        msg += f" | 👥 {stats.new_subscribers} subs"
+                    msg += "\n"
             
             await context.bot.send_message(
                 chat_id=int(chat_id),
@@ -1313,19 +1462,51 @@ async def weekly_report_job(context: CallbackContext) -> None:
             continue
         
         try:
-            stats = om_client.calculate_revenue(
-                mapping.platform,
-                mapping.platform_account_id,
-                start_utc,
-                end_utc
-            )
+            # Fetch stats for all models in this chat
+            all_stats = []
+            for model in mapping.models:
+                stats = om_client.calculate_revenue(
+                    model.platform,
+                    model.platform_account_id,
+                    start_utc,
+                    end_utc
+                )
+                all_stats.append((model, stats))
             
-            msg = MessageFormatter.format_revenue(
-                stats,
-                mapping.platform_account_id,
-                mapping.platform,
-                "📊 Weekly Revenue Report (Last 7 Days)"
-            )
+            # Format message based on number of models
+            if len(all_stats) == 1:
+                # Single model - detailed view
+                model, stats = all_stats[0]
+                display_name = model.nickname or model.platform_account_id
+                msg = MessageFormatter.format_revenue(
+                    stats,
+                    display_name,
+                    model.platform,
+                    "📊 Weekly Revenue Report (Last 7 Days)"
+                )
+            else:
+                # Multiple models - combined view
+                total_revenue = sum(s.total_amount for _, s in all_stats)
+                total_subs = sum(s.new_subscribers or 0 for _, s in all_stats)
+                
+                start_berlin = start_utc.astimezone(BERLIN_TZ)
+                end_berlin = end_utc.astimezone(BERLIN_TZ)
+                
+                msg = f"📊 *Weekly Revenue Report (Last 7 Days)*\n\n"
+                msg += f"**All Models Combined:**\n"
+                msg += f"💰 Total Revenue: *${total_revenue:,.2f}*\n"
+                if total_subs > 0:
+                    msg += f"👥 New Subscribers: *{total_subs}*\n"
+                msg += f"\n📅 Period: {start_berlin.strftime('%d.%m.%Y %H:%M')} - {end_berlin.strftime('%d.%m.%Y %H:%M')}\n\n"
+                
+                msg += "**Breakdown by Model:**\n"
+                for model, stats in all_stats:
+                    display_name = model.nickname or model.platform_account_id
+                    msg += f"\n🎯 **{display_name}**:\n"
+                    msg += f"   💰 ${stats.total_amount:,.2f}"
+                    if stats.new_subscribers and stats.new_subscribers > 0:
+                        msg += f" | 👥 {stats.new_subscribers} subs"
+                    msg += "\n"
             
             await context.bot.send_message(
                 chat_id=int(chat_id),
