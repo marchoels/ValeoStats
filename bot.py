@@ -269,6 +269,23 @@ try:
         
         storage = DatabaseStorageWrapper()
         logger.info("Database storage initialized successfully")
+        
+        # Auto-migration: Add enable_monthly_report column if it doesn't exist
+        try:
+            import psycopg2
+            conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+            cur = conn.cursor()
+            cur.execute("""
+                ALTER TABLE chat_mappings 
+                ADD COLUMN IF NOT EXISTS enable_monthly_report BOOLEAN DEFAULT TRUE;
+            """)
+            conn.commit()
+            cur.close()
+            conn.close()
+            logger.info("✅ Database migration completed: enable_monthly_report column added")
+        except Exception as migration_error:
+            logger.warning(f"Migration skipped or already complete: {migration_error}")
+        
     else:
         logger.info("DATABASE_URL not found, using JSON file storage")
         storage = StorageManager(MAPPING_FILE)
