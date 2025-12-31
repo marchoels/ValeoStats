@@ -346,7 +346,7 @@ class OnlyMonsterClient:
         logger.info(f"Fetching transactions: {url} with params {params}")
         
         try:
-            response = self.session.get(url, params=params, timeout=30)
+            response = self.session.get(url, params=params, timeout=60)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -385,7 +385,7 @@ class OnlyMonsterClient:
         logger.info(f"Fetching subscribers: {url} with params {params}")
         
         try:
-            response = self.session.get(url, params=params, timeout=30)
+            response = self.session.get(url, params=params, timeout=60)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -1784,7 +1784,7 @@ async def whale_alert_job(context: CallbackContext) -> None:
                 f"/accounts/{mapping.platform_account_id}/fans/online"
             )
             
-            response = om_client.session.get(url, timeout=20)
+            response = om_client.session.get(url, timeout=60)
             if response.status_code != 200:
                 logger.debug(f"Whale check failed for {mapping.platform_account_id}: {response.status_code}")
                 continue

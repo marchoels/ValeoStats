@@ -93,7 +93,7 @@ class ChatterPerformanceClient:
             }
             
             logger.info(f"Fetching chatter performance: {url}")
-            response = self.session.get(url, params=params, timeout=30)
+            response = self.session.get(url, params=params, timeout=60)
             response.raise_for_status()
             
             data = response.json()
