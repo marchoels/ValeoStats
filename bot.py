@@ -346,7 +346,7 @@ class OnlyMonsterClient:
         logger.info(f"Fetching transactions: {url} with params {params}")
         
         try:
-            response = self.session.get(url, params=params, timeout=60)
+            response = self.session.get(url, params=params, timeout=30)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -385,7 +385,7 @@ class OnlyMonsterClient:
         logger.info(f"Fetching subscribers: {url} with params {params}")
         
         try:
-            response = self.session.get(url, params=params, timeout=60)
+            response = self.session.get(url, params=params, timeout=30)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -1376,6 +1376,38 @@ async def cmd_models(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 # ============================================================================
 
 
+def dict_to_chat_mapping(mapping_dict: dict) -> ChatMapping:
+    """
+    Convert database dictionary to ChatMapping object.
+    
+    Args:
+        mapping_dict: Dictionary from database with 'models' list and settings
+    
+    Returns:
+        ChatMapping object
+    """
+    # Convert model dictionaries to ModelConfig objects
+    models = [
+        ModelConfig(
+            platform=m.get('platform'),
+            platform_account_id=m.get('platform_account_id'),
+            nickname=m.get('nickname')
+        )
+        for m in mapping_dict.get('models', [])
+    ]
+    
+    return ChatMapping(
+        models=models,
+        chat_type=mapping_dict.get('chat_type', 'agency'),
+        enable_daily_report=mapping_dict.get('enable_daily_report', True),
+        enable_weekly_report=mapping_dict.get('enable_weekly_report', True),
+        enable_monthly_report=mapping_dict.get('enable_monthly_report', True),
+        enable_whale_alerts=mapping_dict.get('enable_whale_alerts', True),
+        enable_chatter_report=mapping_dict.get('enable_chatter_report', False),
+        whale_alert_threshold=mapping_dict.get('whale_alert_threshold', 4)
+    )
+
+
 async def daily_report_job(context: CallbackContext) -> None:
     """
     Scheduled job that runs daily at 1:00 AM Berlin time.
@@ -1383,15 +1415,18 @@ async def daily_report_job(context: CallbackContext) -> None:
     """
     logger.info("Starting daily report job")
     
-    mappings = storage.load()
+    mappings_dict = db_storage.load_all_mappings()
     
-    if not mappings:
+    if not mappings_dict:
         logger.info("No chat mappings found for daily report")
         return
     
     start_utc, end_utc = OnlyFansCalendar.get_previous_of_day()
     
-    for chat_id, mapping in mappings.items():
+    for chat_id, mapping_dict in mappings_dict.items():
+        # Convert dict to ChatMapping object
+        mapping = dict_to_chat_mapping(mapping_dict)
+        
         # Skip if daily reports are disabled for this chat
         if not mapping.enable_daily_report:
             logger.info(f"Daily report disabled for chat {chat_id}, skipping")
@@ -1462,9 +1497,9 @@ async def weekly_report_job(context: CallbackContext) -> None:
     """
     logger.info("Starting weekly report job")
     
-    mappings = storage.load()
+    mappings_dict = db_storage.load_all_mappings()
     
-    if not mappings:
+    if not mappings_dict:
         logger.info("No chat mappings found for weekly report")
         return
     
@@ -1478,7 +1513,10 @@ async def weekly_report_job(context: CallbackContext) -> None:
     start_utc, _ = OnlyFansCalendar.get_of_day_range(start_day)
     _, end_utc = OnlyFansCalendar.get_of_day_range(end_day)
     
-    for chat_id, mapping in mappings.items():
+    for chat_id, mapping_dict in mappings_dict.items():
+        # Convert dict to ChatMapping object
+        mapping = dict_to_chat_mapping(mapping_dict)
+        
         # Skip if weekly reports are disabled for this chat
         if not mapping.enable_weekly_report:
             logger.info(f"Weekly report disabled for chat {chat_id}, skipping")
@@ -1548,9 +1586,9 @@ async def monthly_report_job(context: CallbackContext) -> None:
     """
     logger.info("Starting monthly report job")
     
-    mappings = storage.load()
+    mappings_dict = db_storage.load_all_mappings()
     
-    if not mappings:
+    if not mappings_dict:
         logger.info("No chat mappings found for monthly report")
         return
     
@@ -1579,7 +1617,10 @@ async def monthly_report_job(context: CallbackContext) -> None:
     # Format month name for report
     month_name = last_day_prev_month.strftime("%B %Y")  # e.g., "December 2024"
     
-    for chat_id, mapping in mappings.items():
+    for chat_id, mapping_dict in mappings_dict.items():
+        # Convert dict to ChatMapping object
+        mapping = dict_to_chat_mapping(mapping_dict)
+        
         # Skip if monthly reports are disabled for this chat
         if not mapping.enable_monthly_report:
             logger.info(f"Monthly report disabled for chat {chat_id}, skipping")
@@ -1652,9 +1693,9 @@ async def chatter_report_job(context: CallbackContext) -> None:
     """
     logger.info("Starting chatter report job")
     
-    mappings = storage.load()
+    mappings_dict = db_storage.load_all_mappings()
     
-    if not mappings:
+    if not mappings_dict:
         logger.info("No chat mappings found for chatter report")
         return
     
@@ -1664,7 +1705,10 @@ async def chatter_report_job(context: CallbackContext) -> None:
     # Get yesterday's date for the report title
     yesterday = (datetime.now(BERLIN_TZ) - timedelta(days=1)).strftime("%Y-%m-%d")
     
-    for chat_id, mapping in mappings.items():
+    for chat_id, mapping_dict in mappings_dict.items():
+        # Convert dict to ChatMapping object
+        mapping = dict_to_chat_mapping(mapping_dict)
+        
         # Only send if chatter reports are enabled
         if not mapping.enable_chatter_report:
             logger.info(f"Chatter reports disabled for chat {chat_id}, skipping")
@@ -1767,67 +1811,71 @@ async def whale_alert_job(context: CallbackContext) -> None:
     """
     logger.info("Checking for whale alerts")
     
-    mappings = storage.load()
+    mappings = db_storage.load_all_mappings()
     
     if not mappings:
         return
     
-    for chat_id, mapping in mappings.items():
+    for chat_id, mapping_data in mappings.items():
         # Skip if whale alerts are disabled
-        if not mapping.enable_whale_alerts:
+        if not mapping_data.get('enable_whale_alerts', True):
             continue
         
-        try:
-            # Get online fans with high buying power
-            url = (
-                f"{om_client.base_url}/api/v0/platforms/{mapping.platform.lower()}"
-                f"/accounts/{mapping.platform_account_id}/fans/online"
-            )
-            
-            response = om_client.session.get(url, timeout=60)
-            if response.status_code != 200:
-                logger.debug(f"Whale check failed for {mapping.platform_account_id}: {response.status_code}")
-                continue
-            
-            data = response.json()
-            fans = data.get("fans", []) or []
-            
-            # Filter high-value fans
-            for fan in fans:
-                buying_power = fan.get("buying_power", 0)
-                fan_username = fan.get("username", "Unknown")
-                fan_id = fan.get("id", "")
-                last_spent = fan.get("last_purchase_amount", 0)
+        # Check each model in this chat
+        for model in mapping_data.get('models', []):
+            try:
+                # Get online fans with high buying power
+                url = (
+                    f"{om_client.base_url}/api/v0/platforms/{model['platform'].lower()}"
+                    f"/accounts/{model['platform_account_id']}/fans/online"
+                )
                 
-                # Check if fan meets threshold
-                if buying_power >= mapping.whale_alert_threshold:
-                    # Check if we already alerted about this fan recently
-                    # (to avoid spam) - using context.bot_data as temporary storage
-                    alert_key = f"whale_{chat_id}_{fan_id}"
-                    last_alert = context.bot_data.get(alert_key, 0)
-                    current_time = datetime.now().timestamp()
+                response = om_client.session.get(url, timeout=60)
+                if response.status_code != 200:
+                    logger.debug(f"Whale check failed for {model['platform_account_id']}: {response.status_code}")
+                    continue
+                
+                data = response.json()
+                fans = data.get("fans", []) or []
+                
+                # Filter high-value fans
+                whale_threshold = mapping_data.get('whale_alert_threshold', 4)
+                for fan in fans:
+                    buying_power = fan.get("buying_power", 0)
+                    fan_username = fan.get("username", "Unknown")
+                    fan_id = fan.get("id", "")
+                    last_spent = fan.get("last_purchase_amount", 0)
                     
-                    # Only alert if we haven't alerted in last 30 minutes
-                    if current_time - last_alert > 1800:  # 30 minutes
-                        whale_msg = (
-                            f"🐋 *WHALE ALERT!*\n\n"
-                            f"High-value fan is online!\n\n"
-                            f"👤 Username: `{fan_username}`\n"
-                            f"⭐ Buying Power: *{buying_power}/5*\n"
-                            f"💰 Last Purchase: *${last_spent:.2f}*\n"
-                            f"🎯 Model: `{mapping.platform_account_id}`\n\n"
-                            f"🚀 *Engage NOW!*"
-                        )
+                    # Check if fan meets threshold
+                    if buying_power >= whale_threshold:
+                        # Check if we already alerted about this fan recently
+                        # (to avoid spam) - using context.bot_data as temporary storage
+                        alert_key = f"whale_{chat_id}_{fan_id}"
+                        last_alert = context.bot_data.get(alert_key, 0)
+                        current_time = datetime.now().timestamp()
                         
-                        await context.bot.send_message(
-                            chat_id=int(chat_id),
-                            text=whale_msg,
-                            parse_mode="Markdown"
-                        )
-                        
-                        # Mark as alerted
-                        context.bot_data[alert_key] = current_time
-                        logger.info(f"Sent whale alert to chat {chat_id} for fan {fan_username}")
+                        # Only alert if we haven't alerted in last 30 minutes
+                        if current_time - last_alert > 1800:  # 30 minutes
+                            model_display = model.get('nickname') or model['platform_account_id']
+                            whale_msg = (
+                                f"🐋 *WHALE ALERT!*\n\n"
+                                f"High-value fan is online!\n\n"
+                                f"👤 Username: `{fan_username}`\n"
+                                f"⭐ Buying Power: *{buying_power}/5*\n"
+                                f"💰 Last Purchase: *${last_spent:.2f}*\n"
+                                f"🎯 Model: `{model_display}`\n\n"
+                                f"🚀 *Engage NOW!*"
+                            )
+                            
+                            await context.bot.send_message(
+                                chat_id=int(chat_id),
+                                text=whale_msg,
+                                parse_mode="Markdown"
+                            )
+                            
+                            # Mark as alerted
+                            context.bot_data[alert_key] = current_time
+                            logger.info(f"Sent whale alert to chat {chat_id} for fan {fan_username}")
         
         except Exception as e:
             logger.error(f"Whale alert check failed for chat {chat_id}: {e}")
