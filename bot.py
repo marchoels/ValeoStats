@@ -346,7 +346,7 @@ class OnlyMonsterClient:
         logger.info(f"Fetching transactions: {url} with params {params}")
         
         try:
-            response = self.session.get(url, params=params, timeout=30)
+            response = self.session.get(url, params=params, timeout=60)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -385,7 +385,7 @@ class OnlyMonsterClient:
         logger.info(f"Fetching subscribers: {url} with params {params}")
         
         try:
-            response = self.session.get(url, params=params, timeout=30)
+            response = self.session.get(url, params=params, timeout=60)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -1415,7 +1415,7 @@ async def daily_report_job(context: CallbackContext) -> None:
     """
     logger.info("Starting daily report job")
     
-    mappings_dict = db_storage.load_all_mappings()
+    mappings_dict = _db_storage.load_all_mappings()
     
     if not mappings_dict:
         logger.info("No chat mappings found for daily report")
@@ -1497,7 +1497,7 @@ async def weekly_report_job(context: CallbackContext) -> None:
     """
     logger.info("Starting weekly report job")
     
-    mappings_dict = db_storage.load_all_mappings()
+    mappings_dict = _db_storage.load_all_mappings()
     
     if not mappings_dict:
         logger.info("No chat mappings found for weekly report")
@@ -1586,7 +1586,7 @@ async def monthly_report_job(context: CallbackContext) -> None:
     """
     logger.info("Starting monthly report job")
     
-    mappings_dict = db_storage.load_all_mappings()
+    mappings_dict = _db_storage.load_all_mappings()
     
     if not mappings_dict:
         logger.info("No chat mappings found for monthly report")
@@ -1693,7 +1693,7 @@ async def chatter_report_job(context: CallbackContext) -> None:
     """
     logger.info("Starting chatter report job")
     
-    mappings_dict = db_storage.load_all_mappings()
+    mappings_dict = _db_storage.load_all_mappings()
     
     if not mappings_dict:
         logger.info("No chat mappings found for chatter report")
@@ -1811,7 +1811,7 @@ async def whale_alert_job(context: CallbackContext) -> None:
     """
     logger.info("Checking for whale alerts")
     
-    mappings = db_storage.load_all_mappings()
+    mappings = _db_storage.load_all_mappings()
     
     if not mappings:
         return
@@ -1876,9 +1876,9 @@ async def whale_alert_job(context: CallbackContext) -> None:
                             # Mark as alerted
                             context.bot_data[alert_key] = current_time
                             logger.info(f"Sent whale alert to chat {chat_id} for fan {fan_username}")
-        
-        except Exception as e:
-            logger.error(f"Whale alert check failed for chat {chat_id}: {e}")
+            
+            except Exception as e:
+                logger.error(f"Whale alert check failed for model {model.get('platform_account_id', 'unknown')}: {e}")
 
 
 # ============================================================================
