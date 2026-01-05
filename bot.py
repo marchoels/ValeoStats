@@ -1443,6 +1443,10 @@ async def daily_report_job(context: CallbackContext) -> None:
                     end_utc
                 )
                 all_stats.append((model, stats))
+                
+                # Add delay to avoid rate limiting (2 seconds between requests)
+                import asyncio
+                await asyncio.sleep(2)
             
             # Format message for multiple models
             if len(all_stats) == 1:
@@ -1533,6 +1537,10 @@ async def weekly_report_job(context: CallbackContext) -> None:
                     end_utc
                 )
                 all_stats.append((model, stats))
+                
+                # Add delay to avoid rate limiting
+                import asyncio
+                await asyncio.sleep(2)
             
             # Format message
             if len(all_stats) == 1:
@@ -1637,6 +1645,10 @@ async def monthly_report_job(context: CallbackContext) -> None:
                     end_utc
                 )
                 all_stats.append((model, stats))
+                
+                # Add delay to avoid rate limiting
+                import asyncio
+                await asyncio.sleep(2)
             
             # Format message based on number of models
             if len(all_stats) == 1:
